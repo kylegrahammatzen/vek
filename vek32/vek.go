@@ -518,6 +518,26 @@ func MatMul_Into(dst, x, y []float32, n int) []float32 {
 	return dst[:m*p]
 }
 
+// MatMulVec_Into multiplies an m-by-n matrix by an n-element vector and writes
+// the result into dst. Always single-threaded: calls the AVX2 assembly kernel
+// directly without the parallel wrapper that spawns goroutines for large
+// matrices. This is faster for matrix-vector multiply where goroutine overhead
+// dominates (e.g. 768x256 at ~200K elements takes ~10us of math but ~30us of
+// goroutine overhead with the parallel path).
+func MatMulVec_Into(dst, mat, vec []float32, rows, cols int) {
+	if rows*cols > len(mat) || cols > len(vec) || rows > len(dst) {
+		panic("slice lengths too small for matrix dimensions")
+	}
+	for i := range dst[:rows] {
+		dst[i] = 0
+	}
+	if functions.UseAVX2 {
+		functions.MatMulVec_AVX2_F32(dst[:rows], mat[:rows*cols], vec[:cols], rows, cols)
+	} else {
+		functions.MatMulVec_Go(dst[:rows], mat[:rows*cols], vec[:cols], rows, cols)
+	}
+}
+
 // Mat4Mul multiplies two 4-by-4 matrices and returns the resulting 4-by-4 matrix. The matrices
 // should be in row-major order. To multiply a matrix and a vector batch them into groups of 4.
 func Mat4Mul(x, y []float32) []float32 {
